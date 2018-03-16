@@ -4,6 +4,8 @@
 
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.MOUNT_UNMOUNT_FILESYSTEMS" />
 
     <application
         android:allowBackup="true"
@@ -12,6 +14,15 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
+
+        <!-- <provider -->
+        <!-- android:authorities="com.windyice.qwerty.CVCamera.fileprovider" -->
+        <!-- android:name="android.support.v4.content.FileProvider" -->
+        <!-- android:exported="false" -->
+        <!-- android:grantUriPermissions="true"> -->
+        <!-- <meta-data android:name="android.support.FILE_PROVIDER_PATHS" -->
+        <!-- android:resource="@string/file_paths"></meta-data> -->
+        <!-- </provider> -->
         <activity
             android:name=".MainActivity"
             android:label="@string/app_name"
@@ -25,7 +36,9 @@
         <activity android:name=".MainVideoActivity" />
         <activity android:name=".SecondVideoActivity" />
         <activity android:name=".Video2Activity" />
-        <activity android:name=".CVCamera"></activity>
+        <activity android:name=".CVCamera" />
+        <activity android:name=".InfoActivity" />
+        <activity android:name=".SettingActivity"></activity>
     </application>
 
 </manifest>

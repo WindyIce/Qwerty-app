@@ -1,6 +1,7 @@
 package com.windyice.qwerty;
 
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.support.design.widget.FloatingActionButton;
 import android.support.design.widget.Snackbar;
@@ -18,10 +19,20 @@ import android.widget.Toast;
 public class MainActivity extends AppCompatActivity
         implements NavigationView.OnNavigationItemSelectedListener {
 
+    private void sharePreInit(){
+        SharedPreferences preferences=getSharedPreferences("data",MODE_PRIVATE);
+
+        String IP=preferences.getString("IP",Utils.hostIP);
+        int port=preferences.getInt("port",Utils.hostPort);
+        Utils.hostIP=IP;
+        Utils.hostPort=port;
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        sharePreInit();
         Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
 
@@ -93,9 +104,11 @@ public class MainActivity extends AppCompatActivity
             Intent intent=new Intent(MainActivity.this,CVCamera.class);
             startActivity(intent);
         } else if (id == R.id.nav_manage) {
-            Toast.makeText(getApplicationContext(),"Not Implemented yet",Toast.LENGTH_SHORT).show();
+            Intent intent=new Intent(MainActivity.this,InfoActivity.class);
+            startActivity(intent);
         } else if (id == R.id.nav_share) {
-            Toast.makeText(getApplicationContext(),"Not Implemented yet",Toast.LENGTH_SHORT).show();
+            Intent intent=new Intent(MainActivity.this,SettingActivity.class);
+            startActivity(intent);
         } else if (id == R.id.nav_send) {
             Toast.makeText(getApplicationContext(),"Not Implemented yet",Toast.LENGTH_SHORT).show();
         }

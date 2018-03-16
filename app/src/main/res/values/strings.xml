@@ -10,4 +10,8 @@
     <string name="return1">return</string>
     <string name="connect">连接</string>
     <string name="preview">preview</string>
+    <string name="recognize">识别</string>
+    <string name="takephoto">拍照</string>
+    <string name="file_paths"></string>
+    <string name="confirm">确认</string>
 </resources>

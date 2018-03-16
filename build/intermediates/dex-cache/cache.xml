@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<items version="2" >
+
+    <item
+        is-multidex="false"
+        jar="C:\Users\32699\AndroidStudioProjects\Qwerty\openCVLibrary341\build\intermediates\intermediate-jars\release\classes.jar"
+        jumboMode="false"
+        min-sdk-version="14"
+        optimize="true"
+        revision="26.0.2"
+        sha1="01aa2248abf4d54fd089499b717df68e811e0113">
+        <dex dex="C:\Users\32699\AndroidStudioProjects\Qwerty\app\build\intermediates\transforms\preDex\release\19.jar" />
+    </item>
+
+</items>
