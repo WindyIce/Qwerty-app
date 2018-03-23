@@ -15,8 +15,8 @@ public class Utils {
 
     public static String globalCalibrateInformation="";
 
-    public static String hostIP="23.97.65.241";
-    public static int hostPort=3389;
-
+    public static String hostIP="39.108.118.166";
+    public static int hostPort=1883;
+    public static String clientId="WindyIce_android";
 
 }

@@ -30,6 +30,9 @@ import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
+import org.eclipse.paho.client.mqttv3.MqttCallback;
+import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.opencv.android.BaseLoaderCallback;
 import org.opencv.android.CameraBridgeViewBase;
 import org.opencv.android.LoaderCallbackInterface;
@@ -57,6 +60,8 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
     private static final int CAMERA_AUTHORIZE_CODE=321;
     private static final int WRITE_EXTERNAL_STORAGE_AUTHORIZE_CODE=322;
     private static final int MOUNT_UNMOUNT_FILESYSTEMS_AUTHORIZE_CODE=323;
+    private static final int MQTT_RECEIVE=8;
+    private static final int MQTT_SEND=9;
 
     public static final double PI=3.1415926535897932384626434;
 
@@ -107,6 +112,8 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
             }
         }
     };
+
+    private MqttBaseOperation mqttBaseOperation=new MqttBaseOperation("tcp://"+Utils.hostIP+":"+Utils.hostPort,Utils.clientId);
 
     private void authorize(){
         // 获得权限
@@ -209,6 +216,42 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
         viewInit(); // 获得xml对象
         sensorInit();
 
+        mqttBaseOperation.Setting(false,10,20);
+        mqttBaseOperation.setCallback(new MqttCallback() {
+            @Override
+            public void connectionLost(Throwable cause) {
+                Log.i(TAG,"Mqtt::ConnectionLost");
+            }
+
+            @Override
+            public void messageArrived(String topic, MqttMessage message) throws Exception {
+                Log.i(TAG,topic+": topic\nmessage: "+message.toString());
+                Message message1=new Message();
+                message1.what=MQTT_RECEIVE;
+                message1.obj="Topic_"+topic+"_message_"+message.toString();
+                mqttBaseOperation.getHandler().sendMessage(message1);
+            }
+
+            @Override
+            public void deliveryComplete(IMqttDeliveryToken token) {
+                //Log.i(TAG,"Mqtt DeliveryComplete");
+            }
+        });
+        mqttBaseOperation.setHandler(new Handler(){
+            @Override
+            public void handleMessage(Message msg) {
+                super.handleMessage(msg);
+                switch (msg.what){
+                    case MQTT_RECEIVE:{
+
+                    }break;
+                    case MQTT_SEND:{
+
+                    }break;
+                }
+            }
+        });
+        mqttBaseOperation.subscribe("WindyIce_location");
     }
 
     private void CameraRec(){
@@ -384,6 +427,31 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
         }
     };
 
+    private class PublishThread implements Runnable {
+        private String topic;
+        private byte[] message;
+        public PublishThread(String _topic,byte[] _message){
+            topic=_topic;
+            message=_message;
+        }
+        @Override
+        public void run() {
+            try {
+                MqttMessage mqttMessage=new MqttMessage(message);
+                mqttBaseOperation.publish(topic, mqttMessage);
+            }
+            catch (Exception e){
+                e.printStackTrace();
+            }
+        }
+    }
+
+    private void publish(String topic,String message){
+        PublishThread publishThread=new PublishThread(topic,message.getBytes());
+        new Thread(publishThread).start();
+        mqttBaseOperation.startReconnect(3000,true);
+    }
+
     @SuppressLint("HandlerLeak")
     private Handler mHandler=new Handler(){
         @Override
@@ -392,6 +460,7 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
                 switch (msg.what) {
                     case ACC_SENSOR_CHANGE: {
                         float[] values = (float[]) msg.obj;
+
                         if (isStartComputingPoint) {
                             linear_acceleration = values;
                             List<Float> vectorB = new ArrayList<>();
@@ -409,6 +478,7 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
                             linear_accleration_array[0] = acclerationList.get(0);
                             linear_accleration_array[1] = acclerationList.get(1);
                             linear_accleration_array[2] = acclerationList.get(2);
+
                             startPointOffset.y+=(speed.y*sensorAccuracy+0.5*linear_accleration_array[0]*sensorAccuracy*sensorAccuracy);
                             startPointOffset.x+=(speed.x*sensorAccuracy+0.5*linear_accleration_array[0]*sensorAccuracy*sensorAccuracy);
                             startPointOffset.z+=(speed.z*sensorAccuracy+0.5*linear_accleration_array[0]*sensorAccuracy*sensorAccuracy);
@@ -421,6 +491,8 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
                                     "z: " + startPointOffset.z;
                             mTextview3.setText(stringBuilder);
                         }
+                        else{publish("WindyIce_linearAcc","y_"+values[0]+
+                                "_x_"+values[1]+"_z_"+values[2]);}
                         String string = "LINEAR_ACCELERATION:\nYaw: " + values[0] + "\n" + "Pitch: " + values[1] + "\n" + "Roll: " + values[2] + "\n";
                         mTextview.setText(string);
                     }
