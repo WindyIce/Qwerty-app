@@ -38,7 +38,8 @@
         <activity android:name=".Video2Activity" />
         <activity android:name=".CVCamera" />
         <activity android:name=".InfoActivity" />
-        <activity android:name=".SettingActivity"></activity>
+        <activity android:name=".SettingActivity" />
+        <activity android:name=".SensorTestActivity"></activity>
     </application>
 
 </manifest>

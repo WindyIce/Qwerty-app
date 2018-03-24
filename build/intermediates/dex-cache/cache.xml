@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<items version="2" >
+
+    <item
+        is-multidex="false"
+        jar="C:\Users\32699\AndroidStudioProjects\Qwerty\openCVLibrary341\build\intermediates\intermediate-jars\release\classes.jar"
+        jumboMode="false"
+        min-sdk-version="14"
+        optimize="true"
+        revision="26.0.2"
+        sha1="01aa2248abf4d54fd089499b717df68e811e0113">
+        <dex dex="C:\Users\32699\AndroidStudioProjects\Qwerty\app\build\intermediates\transforms\preDex\release\20.jar" />
+    </item>
+    <item
+        is-multidex="false"
+        jar="C:\WindyIce\gradle-3.3\caches\modules-2\files-2.1\org.eclipse.paho\org.eclipse.paho.client.mqttv3\1.1.0\89d827ffa47c241f2627421ef1d6c7a8c207a341\org.eclipse.paho.client.mqttv3-1.1.0.jar"
+        jumboMode="false"
+        min-sdk-version="14"
+        optimize="true"
+        revision="26.0.2"
+        sha1="89d827ffa47c241f2627421ef1d6c7a8c207a341">
+        <dex dex="C:\Users\32699\AndroidStudioProjects\Qwerty\app\build\intermediates\transforms\preDex\release\4.jar" />
+    </item>
+
+</items>

@@ -3,21 +3,14 @@ package com.windyice.qwerty;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
-import android.content.ContentValues;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.hardware.Sensor;
-import android.hardware.SensorAdditionalInfo;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
-import android.net.Uri;
-import android.os.Environment;
 import android.os.Handler;
 import android.os.Message;
-import android.provider.MediaStore;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
@@ -40,16 +33,10 @@ import org.opencv.android.OpenCVLoader;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.core.Point3;
-import org.opencv.core.Rect;
-import org.opencv.core.Rect2d;
-import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.utils.Converters;
 
-import java.io.File;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
-import java.util.Vector;
 
 public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.CvCameraViewListener2{
 
@@ -91,11 +78,12 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
     private float[] linear_acceleration=new float[3]; // 线性加速度值
     private Mat rotationMatrix_phone2world;
     private boolean supportSensor=true; // 是否支持传感器
-    private final double sensorAccuracy=0.02; // 单位：秒
+    private final double DELTA_TIME =0.02; // 单位：秒
 
     private Point3 startPoint; // 手机开始的位置
-    private Point3 startPointOffset; // 离手机开始位置的位置
-    private Point3 speed; // 实时速度
+    private Point3 mPosWorld; // 离手机开始位置的位置
+    private Point3 mSpeed; // 实时速度
+    private Point3 mAcceleration;
     private boolean isStartComputingPoint=false; // 是否开始计算现在的位置
 
     private BaseLoaderCallback mLoaderCallback=new BaseLoaderCallback(this) {
@@ -216,7 +204,7 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
         viewInit(); // 获得xml对象
         sensorInit();
 
-        mqttBaseOperation.Setting(false,10,20);
+        mqttBaseOperation.Setting(true,10,20);
         mqttBaseOperation.setCallback(new MqttCallback() {
             @Override
             public void connectionLost(Throwable cause) {
@@ -270,8 +258,8 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
 
             isStartComputingPoint=true;
             startPoint=new Point3(0,0,0); // TODO: 和屏幕坐标对应起来！
-            startPointOffset=new Point3(0,0,0);
-            speed=new Point3(0,0,0);
+            mPosWorld =new Point3(0,0,0);
+            mSpeed=new Point3(0,0,0);
         }
         catch (Exception e){
             Toast.makeText(this,e.getMessage(),Toast.LENGTH_LONG).show();
@@ -463,37 +451,39 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
 
                         if (isStartComputingPoint) {
                             linear_acceleration = values;
-                            List<Float> vectorB = new ArrayList<>();
+                            List<Float> vector_local_acceleration = new ArrayList<>();
                             for (float a : linear_acceleration) {
-                                vectorB.add(a);
+                                vector_local_acceleration.add(a);
                             }
-                            Mat linear_accleration_world = new Mat();
-                            linear_accleration_world = Camera.matMul(
+                            Mat linear_acceleration_world = new Mat();
+                            linear_acceleration_world = Camera.matMul(
                                     rotationMatrix_phone2world,
-                                    Converters.vector_float_to_Mat(vectorB),
-                                    linear_accleration_world);
-                            List<Float> acclerationList = new ArrayList<>();
-                            Converters.Mat_to_vector_float(linear_accleration_world, acclerationList);
+                                    Converters.vector_float_to_Mat(vector_local_acceleration),
+                                    linear_acceleration_world   );
+                            List<Float> accelerationList = new ArrayList<>();
+                            Converters.Mat_to_vector_float(linear_acceleration_world, accelerationList);
                             float[] linear_accleration_array = new float[3];
-                            linear_accleration_array[0] = acclerationList.get(0);
-                            linear_accleration_array[1] = acclerationList.get(1);
-                            linear_accleration_array[2] = acclerationList.get(2);
+                            linear_accleration_array[0] = accelerationList.get(0);
+                            linear_accleration_array[1] = accelerationList.get(1);
+                            linear_accleration_array[2] = accelerationList.get(2);
 
-                            startPointOffset.y+=(speed.y*sensorAccuracy+0.5*linear_accleration_array[0]*sensorAccuracy*sensorAccuracy);
-                            startPointOffset.x+=(speed.x*sensorAccuracy+0.5*linear_accleration_array[0]*sensorAccuracy*sensorAccuracy);
-                            startPointOffset.z+=(speed.z*sensorAccuracy+0.5*linear_accleration_array[0]*sensorAccuracy*sensorAccuracy);
-                            speed.y+=linear_accleration_array[0]*sensorAccuracy;
-                            speed.x+=linear_accleration_array[1]*sensorAccuracy;
-                            speed.z+=linear_accleration_array[2]*sensorAccuracy;
+                            mSpeed.x+=linear_accleration_array[0]* DELTA_TIME;
+                            mSpeed.y+=linear_accleration_array[1]* DELTA_TIME;
+                            mSpeed.z+=linear_accleration_array[2]* DELTA_TIME;
+
+                            mPosWorld.x+=(mSpeed.x* DELTA_TIME);
+                            mPosWorld.y+=(mSpeed.y* DELTA_TIME);
+                            mPosWorld.z+=(mSpeed.z* DELTA_TIME);
+
                             String stringBuilder = "Location: \n" +
-                                    "x: " + startPointOffset.x + "\n" +
-                                    "y: " + startPointOffset.y + "\n" +
-                                    "z: " + startPointOffset.z;
+                                    "x: " + mPosWorld.x + "\n" +
+                                    "y: " + mPosWorld.y + "\n" +
+                                    "z: " + mPosWorld.z;
                             mTextview3.setText(stringBuilder);
                         }
                         else{publish("WindyIce_linearAcc","y_"+values[0]+
                                 "_x_"+values[1]+"_z_"+values[2]);}
-                        String string = "LINEAR_ACCELERATION:\nYaw: " + values[0] + "\n" + "Pitch: " + values[1] + "\n" + "Roll: " + values[2] + "\n";
+                        String string = "LINEAR_ACCELERATION:\nx: " + values[0] + "\n" + "y: " + values[1] + "\n" + "z: " + values[2] + "\n";
                         mTextview.setText(string);
                     }
                     break;
@@ -523,7 +513,7 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
                             tempMat.put(2, 0, c1 * s2 * s3 - c3 * s1);
                             tempMat.put(2, 1, c1 * c3 * s2 + s1 * s3);
                             tempMat.put(2, 2, c1 * c2);
-                            rotationMatrix_phone2world = tempMat.inv(); // 会不会出错？是逆矩阵还是？
+                            rotationMatrix_phone2world = tempMat.t(); // 会不会出错？是逆矩阵还是？这里直接优化成transpose(正交矩阵的逆等于转置)
                         }
                         String string = "ORIENTATION:\nYaw: " + values[0] + "\n" + "Pitch: " + values[1] + "\n" + "Roll: " + values[2] + "\n";
                         mTextview1.setText(string);
