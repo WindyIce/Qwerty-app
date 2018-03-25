@@ -33,7 +33,8 @@ public class Camera {
 
 
     private static final Size defaultChessboardSize=new Size(7,5);
-    private static final Size defaultChessboardGridWorldSpaceSize=new Size(20.0,20.0);
+    private static final Size defaultChessboardGridWorldSpaceSize=
+            new Size(Utils.chessboardWorldSpaceSize,Utils.chessboardWorldSpaceSize);
     private boolean mIsOkToCalibrate;
 
     // 这里究竟用那个?

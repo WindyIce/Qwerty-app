@@ -19,4 +19,7 @@ public class Utils {
     public static int hostPort=1883;
     public static String clientId="WindyIce_android";
 
+    public static double chessboardWorldSpaceSize=20.0; // 正方形，就收一个数字
+    public static String topic="QRFA";
+
 }

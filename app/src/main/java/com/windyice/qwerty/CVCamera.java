@@ -50,6 +50,11 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
     private static final int MQTT_RECEIVE=8;
     private static final int MQTT_SEND=9;
 
+    private static final String MQTT_MESSAGE_CONNECT="cnet";
+    private static final String MQTT_MESSAGE_NORMAL_RENDER="q3mr";
+
+    private static final String MQTT_MESSAGE_TOPIC =Utils.topic;
+
     public static final double PI=3.1415926535897932384626434;
 
     private CameraBridgeViewBase mOpenCvCameraView;
@@ -67,6 +72,8 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
     private Button mButton;
     private Button mButton_takephoto;
     private boolean takingPhotos=false;
+
+    private final double stopQuota=0.05;
 
     //private final String imageSaveDir="/Qwerty/com.windyice.qwerty/imgs/Chessboard";
     //private int imageIndex=1; // 随着图像文件不断保存，增加的一个索引
@@ -101,7 +108,8 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
         }
     };
 
-    private MqttBaseOperation mqttBaseOperation=new MqttBaseOperation("tcp://"+Utils.hostIP+":"+Utils.hostPort,Utils.clientId);
+    private MqttBaseOperation mqttBaseOperation=
+            new MqttBaseOperation("tcp://"+Utils.hostIP+":"+Utils.hostPort,Utils.clientId);
 
     private void authorize(){
         // 获得权限
@@ -193,6 +201,7 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
         }
     }
 
+    @SuppressLint("HandlerLeak")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -214,10 +223,12 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
             @Override
             public void messageArrived(String topic, MqttMessage message) throws Exception {
                 Log.i(TAG,topic+": topic\nmessage: "+message.toString());
-                Message message1=new Message();
-                message1.what=MQTT_RECEIVE;
-                message1.obj="Topic_"+topic+"_message_"+message.toString();
-                mqttBaseOperation.getHandler().sendMessage(message1);
+                if(topic=="QRFPC") {
+                    Message message1 = new Message();
+                    message1.what = MQTT_RECEIVE;
+                    message1.obj = message.toString();
+                    mqttBaseOperation.getHandler().sendMessage(message1);
+                }
             }
 
             @Override
@@ -231,6 +242,16 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
                 super.handleMessage(msg);
                 switch (msg.what){
                     case MQTT_RECEIVE:{
+                        try {
+                            String[] msgSplit = msg.obj.toString().split("_");
+                            if(msgSplit[0].toLowerCase().equals("wss")){
+                                Utils.chessboardWorldSpaceSize= Double.parseDouble(msgSplit[1]);
+                            }
+                        }
+                        catch (Exception e){
+                            Log.i(TAG,e.getMessage());
+                            Log.i(TAG,Utils.getStackTrackString(e));
+                        }
 
                     }break;
                     case MQTT_SEND:{
@@ -240,6 +261,8 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
             }
         });
         mqttBaseOperation.subscribe("WindyIce_location");
+        MqttMessage mqttMessage=new MqttMessage(MQTT_MESSAGE_CONNECT.getBytes());
+        mqttBaseOperation.publish(MQTT_MESSAGE_TOPIC,mqttMessage);
     }
 
     private void CameraRec(){
@@ -248,7 +271,11 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
             return;
         }
         try {
-            camera=new Camera();
+            if(camera==null) {
+                camera=new Camera();
+                MqttMessage mqttMessage=new MqttMessage(MQTT_MESSAGE_NORMAL_RENDER.getBytes());
+                mqttBaseOperation.publish(MQTT_MESSAGE_TOPIC,mqttMessage);
+            }
             for(int i=0;i<chessboardList.size();i++){
                 camera.RecognizeChessboard(chessboardList.get(i),false);
             }
@@ -440,6 +467,31 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
         mqttBaseOperation.startReconnect(3000,true);
     }
 
+    private void publish(String topic,byte[] message){
+        PublishThread publishThread=new PublishThread(topic,message);
+        new Thread(publishThread).start();
+        mqttBaseOperation.startReconnect(3000,true);
+    }
+
+    private boolean canbeStopValue(float[] values){
+        if(values.length!=3) return false;
+        return values[0] * values[0] + values[1] * values[1] + values[2] * values[2] < stopQuota * stopQuota;
+    }
+    private void stopValue(float[] values){
+        for(int i=0;i<values.length;i++){
+            values[i]=0;
+        }
+    }
+    private boolean canbeStopValue(double[] values){
+        if(values.length!=3) return false;
+        return values[0] * values[0] + values[1] * values[1] + values[2] * values[2] < stopQuota * stopQuota;
+    }
+    private void stopValue(double[] values){
+        for(int i=0;i<values.length;i++){
+            values[i]=0;
+        }
+    }
+
     @SuppressLint("HandlerLeak")
     private Handler mHandler=new Handler(){
         @Override
@@ -451,6 +503,7 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
 
                         if (isStartComputingPoint) {
                             linear_acceleration = values;
+                            if(canbeStopValue(linear_acceleration)) stopValue(linear_acceleration);
                             List<Float> vector_local_acceleration = new ArrayList<>();
                             for (float a : linear_acceleration) {
                                 vector_local_acceleration.add(a);
@@ -470,6 +523,14 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
                             mSpeed.x+=linear_accleration_array[0]* DELTA_TIME;
                             mSpeed.y+=linear_accleration_array[1]* DELTA_TIME;
                             mSpeed.z+=linear_accleration_array[2]* DELTA_TIME;
+
+                            double[] speed={mSpeed.x,mSpeed.y,mSpeed.z};
+                            if(canbeStopValue(speed)){
+                                stopValue(speed);
+                                mSpeed.x=0;
+                                mSpeed.y=0;
+                                mSpeed.z=0;
+                            }
 
                             mPosWorld.x+=(mSpeed.x* DELTA_TIME);
                             mPosWorld.y+=(mSpeed.y* DELTA_TIME);

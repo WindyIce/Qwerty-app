@@ -16,6 +16,7 @@ import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.core.Point3;
@@ -54,6 +55,9 @@ public class SensorTestActivity extends AppCompatActivity {
     private TextView mTextView_location;
     private EditText mEditText;
     private Button mButton;
+
+    private MqttBaseOperation mqttBaseOperation=
+            new MqttBaseOperation("tcp://"+Utils.hostIP+":"+Utils.hostPort,Utils.clientId);
 
     private void makeToast(String text){
         Toast.makeText(this,text,Toast.LENGTH_LONG).show();
@@ -125,6 +129,8 @@ public class SensorTestActivity extends AppCompatActivity {
 
         sensorInit();
         viewInit();
+        mqttBaseOperation.Setting(true,10,20);
+        mqttBaseOperation.publish(Utils.topic,new MqttMessage("cpdb".getBytes()));
     }
 
     // 线性加速度传感器监听
@@ -224,7 +230,12 @@ public class SensorTestActivity extends AppCompatActivity {
                         mSpeed.y+=linear_accleration_array[1]* DELTA_TIME;
                         mSpeed.z+=linear_accleration_array[2]* DELTA_TIME;
                         double[] speed={mSpeed.x,mSpeed.y,mSpeed.z};
-                        if(canbeStopValue(speed)||accStop) stopValue(speed); // 如果速度太小，或者加速度为0，速度截止
+                        if(canbeStopValue(speed)||accStop) {
+                            stopValue(speed);
+                            mSpeed.x=0;
+                            mSpeed.y=0;
+                            mSpeed.z=0;
+                        } // 如果速度太小，或者加速度为0，速度截止
 
                         stringBuilder=new StringBuilder();
                         stringBuilder.append("Speed:\n").
@@ -233,9 +244,9 @@ public class SensorTestActivity extends AppCompatActivity {
                                 append("z: ").append(speed[2]);
                         mTextView_speed.setText(stringBuilder.toString());
 
-                        mPosWorld.x+=(mSpeed.x* DELTA_TIME);
-                        mPosWorld.y+=(mSpeed.y* DELTA_TIME);
-                        mPosWorld.z+=(mSpeed.z* DELTA_TIME);
+                        mPosWorld.x+=(speed[0]* DELTA_TIME);
+                        mPosWorld.y+=(speed[1]* DELTA_TIME);
+                        mPosWorld.z+=(speed[2]* DELTA_TIME);
 
                         stringBuilder=new StringBuilder();
                         stringBuilder.append("Position: \n").
