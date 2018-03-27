@@ -39,6 +39,18 @@ public class Camera {
 
     // 这里究竟用那个?
     private List<List<Point3>> mObjectPointsW=new ArrayList<>(); // (K images x (7x5 point3f) on  3d world space
+    public List<List<Point3>> getmObjectPointsW(){
+        return mObjectPointsW;
+    }
+    private Mat mRotationMatrix=new Mat();
+    private List<Mat> mRotationMatrixList=new ArrayList<>();
+    private List<Point3> mTranslationMatrixList=new ArrayList<>();
+    public List<Point3> getmTranslationMatrixList(){
+        return mTranslationMatrixList;
+    }
+    public List<Mat> getmRotationMatrixList(){
+        return mRotationMatrixList;
+    }
     //private ArrayList<Mat> mObjectPointsW=new ArrayList<>();
     private List<List<Point>> mImagePoints=new ArrayList<>(); // (K images x (7x5 point2f) on 2d image
     private Size mImagePixelSize; // pixel size of chessboard image
@@ -195,7 +207,8 @@ public class Camera {
             Mat rotationMatrix=new Mat();
             Calib3d.Rodrigues(rotationVectors.get(i),rotationMatrix);
             Mat transposeRotM=rotationMatrix.t();
-
+            mRotationMatrix=transposeRotM;
+            mRotationMatrixList.add(mRotationMatrix);
             stringBuilder.append("calibration result for image ").append(i + 1).append(":\n");
             stringBuilder.append("Rotation matrix: \n");
             stringBuilder.append("    ").
@@ -233,6 +246,8 @@ public class Camera {
             double posX=-cameraWorldPos.get(0,0)[0];
             double posY=-cameraWorldPos.get(1,0)[0];
             double posZ=-cameraWorldPos.get(2,0)[0];
+
+            mTranslationMatrixList.add(new Point3(posX,posY,posZ));
 
             // in noise3d, screen lies in YZ plane
             double noise3dPosX=posX;

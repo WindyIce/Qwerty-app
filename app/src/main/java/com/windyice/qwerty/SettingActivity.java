@@ -5,6 +5,8 @@ import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.Button;
+import android.widget.CheckBox;
+import android.widget.CompoundButton;
 import android.widget.EditText;
 import android.widget.Toast;
 
@@ -14,6 +16,7 @@ public class SettingActivity extends AppCompatActivity {
     private EditText editText2;
     private Button button1;
     private Button button2;
+    private CheckBox checkBox1;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -29,6 +32,17 @@ public class SettingActivity extends AppCompatActivity {
         editText2.setText(""+aPort);
         button1=(Button)findViewById(R.id.setting_activity_button1);
         button2=(Button)findViewById(R.id.setting_activity_button2);
+        checkBox1=(CheckBox)findViewById(R.id.setting_activity_checkbox1);
+        checkBox1.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton compoundButton, boolean b) {
+                if(b){
+                    Utils.testModeOn=true;
+                }else{
+                    Utils.testModeOn=false;
+                }
+            }
+        });
 
         // IP地址确认
         button1.setOnClickListener(new View.OnClickListener() {

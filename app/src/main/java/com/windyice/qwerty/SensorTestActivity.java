@@ -16,6 +16,8 @@ import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
+import org.eclipse.paho.client.mqttv3.MqttCallback;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
@@ -58,6 +60,31 @@ public class SensorTestActivity extends AppCompatActivity {
 
     private MqttBaseOperation mqttBaseOperation=
             new MqttBaseOperation("tcp://"+Utils.hostIP+":"+Utils.hostPort,Utils.clientId);
+
+    private class PublishThread implements Runnable {
+        private String topic;
+        private byte[] message;
+        public PublishThread(String _topic,byte[] _message){
+            topic=_topic;
+            message=_message;
+        }
+        @Override
+        public void run() {
+            try {
+                MqttMessage mqttMessage=new MqttMessage(message);
+                mqttBaseOperation.publish(topic, mqttMessage);
+            }
+            catch (Exception e){
+                e.printStackTrace();
+            }
+        }
+    }
+
+    private void publish(String topic,String message){
+        PublishThread publishThread=new PublishThread(topic,message.getBytes());
+        new Thread(publishThread).start();
+        mqttBaseOperation.startReconnect(3000,true);
+    }
 
     private void makeToast(String text){
         Toast.makeText(this,text,Toast.LENGTH_LONG).show();
@@ -115,6 +142,42 @@ public class SensorTestActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
 
+        mqttBaseOperation.setCallback(new MqttCallback() {
+            @Override
+            public void connectionLost(Throwable cause) {
+
+                Log.i(TAG,"Mqtt::ConnectionLost");
+
+                mqttBaseOperation.startReconnect(2000);
+            }
+
+            @Override
+            public void messageArrived(String topic, MqttMessage message) throws Exception {
+//                Log.i(TAG,topic+": topic\nmessage: "+message.toString());
+//                if(topic=="QRFPC") {
+//                    Message message1 = new Message();
+//                    message1.what = MQTT_RECEIVE;
+//                    message1.obj = message.toString();
+//                    mqttBaseOperation.getHandler().sendMessage(message1);
+//                }
+            }
+
+            @Override
+            public void deliveryComplete(IMqttDeliveryToken token) {
+                //Log.i(TAG,"Mqtt DeliveryComplete");
+            }
+        });
+
+        mqttBaseOperation.setHandler(new Handler(){
+            @Override
+            public void handleMessage(Message msg) {
+                super.handleMessage(msg);
+            }
+        });
+
+        mqttBaseOperation.Setting(true,10,20);
+
+
         if (supportSensor) {
             // FAST 0ms?    GAME 20ms    UI 60ms    NORMAL 200ms
             mSensorManager.registerListener(accSensorEventListener, mAccSensor, SensorManager.SENSOR_DELAY_GAME);
@@ -126,11 +189,11 @@ public class SensorTestActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_sensor_test);
+        publish(Utils.topic,"cpdb");
 
         sensorInit();
         viewInit();
-        mqttBaseOperation.Setting(true,10,20);
-        mqttBaseOperation.publish(Utils.topic,new MqttMessage("cpdb".getBytes()));
+
     }
 
     // 线性加速度传感器监听
@@ -192,6 +255,7 @@ public class SensorTestActivity extends AppCompatActivity {
             try {
                 switch (msg.what) {
                     case ACC_SENSOR_CHANGE: {
+
                         float[] values = (float[]) msg.obj;
                         boolean accStop=canbeStopValue(values);
                         if(accStop) stopValue(values);

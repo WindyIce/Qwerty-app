@@ -22,4 +22,5 @@ public class Utils {
     public static double chessboardWorldSpaceSize=20.0; // 正方形，就收一个数字
     public static String topic="QRFA";
 
+    public static boolean testModeOn=false;
 }

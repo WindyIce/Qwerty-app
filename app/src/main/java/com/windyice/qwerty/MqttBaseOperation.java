@@ -9,6 +9,7 @@ import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
 import org.eclipse.paho.client.mqttv3.MqttCallback;
 import org.eclipse.paho.client.mqttv3.MqttClient;
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
+import org.eclipse.paho.client.mqttv3.MqttException;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
 
@@ -87,6 +88,10 @@ public class MqttBaseOperation {
         else  connect();
     }
 
+    public void disconnect()throws MqttException{
+        mqttClient.disconnect();
+    }
+
     public void startReconnect(long reconnectRate) {
         //final long reconnectRate=1*3000;
         ScheduledExecutorService scheduledExecutorService = Executors.newSingleThreadScheduledExecutor();
@@ -158,7 +163,10 @@ public class MqttBaseOperation {
             mqttClient.publish(topic,message);
         }
         catch (Exception e){
-            e.printStackTrace();
+            if(!e.getMessage().equals("Too many publishes in progress")){
+                Log.i(TAG,e.getMessage());
+                Log.i(TAG,Utils.getStackTrackString(e));
+            }
         }
     }
 }

@@ -55,7 +55,7 @@
 
     <TextView
         android:id="@+id/activity_cvcamera_textview3"
-        android:layout_width="383dp"
+        android:layout_width="180dp"
         android:layout_height="116dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
@@ -63,6 +63,14 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintVertical_bias="0.875" />
+
+    <TextView
+        android:id="@+id/activity_cvcamera_textview4"
+        android:layout_width="180dp"
+        android:layout_height="116dp"
+        app:layout_constraintLeft_toRightOf="@+id/activity_cvcamera_textview3"
+        app:layout_constraintTop_toBottomOf="@id/activity_cvcamera_textview1"
+        />
 
     <Button
         android:id="@+id/activity_cvcamera_button"

@@ -11,6 +11,7 @@ import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.os.Handler;
 import android.os.Message;
+import android.support.annotation.Nullable;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
@@ -30,11 +31,15 @@ import org.opencv.android.BaseLoaderCallback;
 import org.opencv.android.CameraBridgeViewBase;
 import org.opencv.android.LoaderCallbackInterface;
 import org.opencv.android.OpenCVLoader;
+import org.opencv.core.Core;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
+import org.opencv.core.Point;
 import org.opencv.core.Point3;
+import org.opencv.imgproc.Imgproc;
 import org.opencv.utils.Converters;
 
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -52,8 +57,9 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
 
     private static final String MQTT_MESSAGE_CONNECT="cnet";
     private static final String MQTT_MESSAGE_NORMAL_RENDER="q3mr";
+    private static final String MQTT_MESSAGE_TEST_RENDER="cpdb";
 
-    private static final String MQTT_MESSAGE_TOPIC =Utils.topic;
+    private static final String MQTT_MESSAGE_TOPIC ="QRFA";
 
     public static final double PI=3.1415926535897932384626434;
 
@@ -64,7 +70,8 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
     private TextView mTextview; // 加速传感器
     private TextView mTextview1; // 姿态传感器
     private TextView mTextview2; // 照了几张
-    private TextView mTextview3; // 速度显示
+    private TextView mTextview3; // 位置显示
+    private TextView mTextview4;
     private Camera camera;
 
     private List<Mat> chessboardList=new ArrayList<>();
@@ -73,7 +80,17 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
     private Button mButton_takephoto;
     private boolean takingPhotos=false;
 
-    private final double stopQuota=0.05;
+    private boolean canUpdateR1=false;
+
+    private Mat R3;
+    private Mat R2;
+    private Mat R1;
+
+    private double factor=1;
+
+    private List<Mat> R3TList=new ArrayList<>();
+
+    private final double stopQuota=0.03;
 
     //private final String imageSaveDir="/Qwerty/com.windyice.qwerty/imgs/Chessboard";
     //private int imageIndex=1; // 随着图像文件不断保存，增加的一个索引
@@ -88,10 +105,58 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
     private final double DELTA_TIME =0.02; // 单位：秒
 
     private Point3 startPoint; // 手机开始的位置
-    private Point3 mPosWorld; // 离手机开始位置的位置
-    private Point3 mSpeed; // 实时速度
+    private Point3 mPosWorld=new Point3(); // 离手机开始位置的位置
+
+    private List<Point3> mPosWorldListBeforeRecognize=new ArrayList<>();// 拍照前用于计算refactor的list
+    private Point3 mPosScreen; // 相对屏幕的坐标
+    private Point3 mSpeed=new Point3(); // 实时速度
     private Point3 mAcceleration;
+
+
     private boolean isStartComputingPoint=false; // 是否开始计算现在的位置
+
+    private class DisconnectThread implements Runnable{
+        private MqttBaseOperation mqttBaseOperation;
+        public DisconnectThread(MqttBaseOperation _mqttBaseOperation){
+            mqttBaseOperation=_mqttBaseOperation;
+        }
+
+        @Override
+        public void run() {
+            try {
+                mqttBaseOperation.disconnect();
+            }
+            catch (Exception e){
+                Log.i(TAG,e.getMessage());
+                Log.i(TAG,Utils.getStackTrackString(e));
+            }
+        }
+    }
+
+    private class PublishThread implements Runnable {
+        private String topic;
+        private byte[] message;
+        public PublishThread(String _topic,byte[] _message){
+            topic=_topic;
+            message=_message;
+        }
+        @Override
+        public void run() {
+            try {
+                MqttMessage mqttMessage=new MqttMessage(message);
+                mqttBaseOperation.publish(topic, mqttMessage);
+            }
+            catch (Exception e){
+                e.printStackTrace();
+            }
+        }
+    }
+
+    private void publish(String topic,String message){
+        PublishThread publishThread=new PublishThread(topic,message.getBytes());
+        new Thread(publishThread).start();
+        mqttBaseOperation.startReconnect(3000,true);
+    }
 
     private BaseLoaderCallback mLoaderCallback=new BaseLoaderCallback(this) {
         @Override
@@ -141,6 +206,7 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
         mTextview1=(TextView)findViewById(R.id.activity_cvcamera_textview1);
         mTextview2=(TextView)findViewById(R.id.activity_cvcamera_textview2);
         mTextview3=(TextView)findViewById(R.id.activity_cvcamera_textview3);
+        mTextview4=(TextView)findViewById(R.id.activity_cvcamera_textview4);
         String stringBuilder = "Location: \n" +
                 "x: " + 0 + "\n" +
                 "y: " + 0 + "\n" +
@@ -161,6 +227,8 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
                 if(mOpenCvCameraView!=null){
                     // 每帧的回调CvCameraListener2中会检测这个值
                     takingPhotos=true;
+                    R3TList.add(rotationMatrix_phone2world);
+                    mPosWorldListBeforeRecognize.add(new Point3(mPosWorld.x,mPosWorld.y,mPosWorld.z));
                 }
                 // 正常拍照
 //                try {
@@ -213,59 +281,27 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
         viewInit(); // 获得xml对象
         sensorInit();
 
-        mqttBaseOperation.Setting(true,10,20);
-        mqttBaseOperation.setCallback(new MqttCallback() {
-            @Override
-            public void connectionLost(Throwable cause) {
-                Log.i(TAG,"Mqtt::ConnectionLost");
-            }
 
-            @Override
-            public void messageArrived(String topic, MqttMessage message) throws Exception {
-                Log.i(TAG,topic+": topic\nmessage: "+message.toString());
-                if(topic=="QRFPC") {
-                    Message message1 = new Message();
-                    message1.what = MQTT_RECEIVE;
-                    message1.obj = message.toString();
-                    mqttBaseOperation.getHandler().sendMessage(message1);
-                }
-            }
+    }
 
-            @Override
-            public void deliveryComplete(IMqttDeliveryToken token) {
-                //Log.i(TAG,"Mqtt DeliveryComplete");
-            }
-        });
-        mqttBaseOperation.setHandler(new Handler(){
-            @Override
-            public void handleMessage(Message msg) {
-                super.handleMessage(msg);
-                switch (msg.what){
-                    case MQTT_RECEIVE:{
-                        try {
-                            String[] msgSplit = msg.obj.toString().split("_");
-                            if(msgSplit[0].toLowerCase().equals("wss")){
-                                Utils.chessboardWorldSpaceSize= Double.parseDouble(msgSplit[1]);
-                            }
-                        }
-                        catch (Exception e){
-                            Log.i(TAG,e.getMessage());
-                            Log.i(TAG,Utils.getStackTrackString(e));
-                        }
+    private boolean tag1=true;
 
-                    }break;
-                    case MQTT_SEND:{
-
-                    }break;
-                }
-            }
-        });
-        mqttBaseOperation.subscribe("WindyIce_location");
-        MqttMessage mqttMessage=new MqttMessage(MQTT_MESSAGE_CONNECT.getBytes());
-        mqttBaseOperation.publish(MQTT_MESSAGE_TOPIC,mqttMessage);
+    /*
+* @param A 被乘矩阵
+* @param B 乘矩阵
+* @param C 结果矩阵
+* */
+    public static Mat matMul(Mat A,Mat B,Mat C){
+        Core.gemm(A,B,1.0,Mat.zeros(A.size(),A.type()),0.0,C);
+        return C;
     }
 
     private void CameraRec(){
+        if(tag1){
+            if(Utils.testModeOn) publish(MQTT_MESSAGE_TOPIC,MQTT_MESSAGE_TEST_RENDER);
+            else publish(MQTT_MESSAGE_TOPIC,MQTT_MESSAGE_NORMAL_RENDER);
+            tag1=false;
+        }
         if(chessboardList.size()<=5){
             Toast.makeText(this,"还没有足够的照片!",Toast.LENGTH_SHORT).show();
             return;
@@ -273,20 +309,34 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
         try {
             if(camera==null) {
                 camera=new Camera();
-                MqttMessage mqttMessage=new MqttMessage(MQTT_MESSAGE_NORMAL_RENDER.getBytes());
-                mqttBaseOperation.publish(MQTT_MESSAGE_TOPIC,mqttMessage);
+
             }
             for(int i=0;i<chessboardList.size();i++){
                 camera.RecognizeChessboard(chessboardList.get(i),false);
             }
             camera.Calibrate();
+            List<Mat> R1List;
+            R1List=camera.getmRotationMatrixList();
+            List<Point3> translationPointList=camera.getmTranslationMatrixList();
+            double factorSum=0;
+            for(int i=0;i<translationPointList.size()-1;i++){
+                Point3 cameraPoint=translationPointList.get(i);
+                double x=Math.sqrt(cameraPoint.x*cameraPoint.x+cameraPoint.y*cameraPoint.y+cameraPoint.z*cameraPoint.z);
+                Point3 sensorPoint=mPosWorldListBeforeRecognize.get(i);
+                double y=Math.sqrt(sensorPoint.x*sensorPoint.x+sensorPoint.y*sensorPoint.y+sensorPoint.z*sensorPoint.z);
+                factorSum+=(y/x);
+            }
+            factor=factorSum/(translationPointList.size()-1);
+            R2=matMul(R3TList.get(chessboardList.size()-1),R1List.get(chessboardList.size()-1),R2);  // 直接就取第一张
+            canUpdateR1=true;
+            R1=new Mat();
             Log.i(TAG,camera.toString());
             Utils.globalCalibrateInformation=camera.toString();
-
             isStartComputingPoint=true;
             startPoint=new Point3(0,0,0); // TODO: 和屏幕坐标对应起来！
             mPosWorld =new Point3(0,0,0);
             mSpeed=new Point3(0,0,0);
+            Toast.makeText(this,"识别成功!",Toast.LENGTH_LONG).show();
         }
         catch (Exception e){
             Toast.makeText(this,e.getMessage(),Toast.LENGTH_LONG).show();
@@ -353,9 +403,19 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
         }
     }
 
+
+
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        try {
+            new Thread(new DisconnectThread(mqttBaseOperation)).start();
+            wait();
+        }
+        catch (Exception e){
+            Log.i(TAG,e.getMessage());
+            Log.i(TAG,Utils.getStackTrackString(e));
+        }
         if(mOpenCvCameraView!=null){
             mOpenCvCameraView.disableView();
         }
@@ -364,6 +424,60 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
     @Override
     protected void onResume() {
         super.onResume();
+        mqttBaseOperation.Setting(true,10,20);
+        mqttBaseOperation.setCallback(new MqttCallback() {
+            @Override
+            public void connectionLost(Throwable cause) {
+
+                Log.i(TAG,"Mqtt::ConnectionLost");
+
+                mqttBaseOperation.startReconnect(2000);
+            }
+
+            @Override
+            public void messageArrived(String topic, MqttMessage message) throws Exception {
+                Log.i(TAG,topic+": topic\nmessage: "+message.toString());
+                if(topic=="QRFPC") {
+                    Message message1 = new Message();
+                    message1.what = MQTT_RECEIVE;
+                    message1.obj = message.toString();
+                    mqttBaseOperation.getHandler().sendMessage(message1);
+                }
+            }
+
+            @Override
+            public void deliveryComplete(IMqttDeliveryToken token) {
+
+            }
+        });
+        mqttBaseOperation.subscribe("QRFPC");
+        mqttBaseOperation.setHandler(new Handler(){
+            @Override
+            public void handleMessage(Message msg) {
+                super.handleMessage(msg);
+                switch (msg.what){
+                    case MQTT_RECEIVE:{
+                        try {
+                            String[] msgSplit = msg.obj.toString().split("_");
+                            if(msgSplit[0].toLowerCase().equals("wss")){
+                                Utils.chessboardWorldSpaceSize= Double.parseDouble(msgSplit[1]);
+                            }
+                        }
+                        catch (Exception e){
+                            Log.i(TAG,e.getMessage());
+                            Log.i(TAG,Utils.getStackTrackString(e));
+                        }
+
+                    }break;
+                    case MQTT_SEND:{
+
+                    }break;
+                }
+            }
+        });
+        mqttBaseOperation.connect();
+        publish(MQTT_MESSAGE_TOPIC,MQTT_MESSAGE_CONNECT);
+
         if (!OpenCVLoader.initDebug()) {
             Log.i(TAG, "Internal OpenCv library not found. Using OpenCV Manager for initialization");
             OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION, this, mLoaderCallback); // VERSION_3_0_0
@@ -399,14 +513,18 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
                 //camera.RecognizeChessboard(inputFrame.rgba(), false);
                 Log.i(TAG, "照片保存成功");
                 mTextview2.setText("当前拍了"+chessboardList.size()+"张相");
-
             }
+
         }
         catch (Exception e){
             Log.i(TAG,e.getMessage());
             Log.i(TAG,Utils.getStackTrackString(e));
         }
-        return inputFrame.rgba();
+        Mat dst = new Mat();
+        Mat gray = inputFrame.rgba();
+        Mat rotateMat = Imgproc.getRotationMatrix2D(new Point(gray.rows()/2,gray.cols()/2), 270, 1);
+        Imgproc.warpAffine(gray, dst, rotateMat, dst.size());
+        return dst;
     }
 
     // 线性加速度传感器监听
@@ -442,30 +560,7 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
         }
     };
 
-    private class PublishThread implements Runnable {
-        private String topic;
-        private byte[] message;
-        public PublishThread(String _topic,byte[] _message){
-            topic=_topic;
-            message=_message;
-        }
-        @Override
-        public void run() {
-            try {
-                MqttMessage mqttMessage=new MqttMessage(message);
-                mqttBaseOperation.publish(topic, mqttMessage);
-            }
-            catch (Exception e){
-                e.printStackTrace();
-            }
-        }
-    }
 
-    private void publish(String topic,String message){
-        PublishThread publishThread=new PublishThread(topic,message.getBytes());
-        new Thread(publishThread).start();
-        mqttBaseOperation.startReconnect(3000,true);
-    }
 
     private void publish(String topic,byte[] message){
         PublishThread publishThread=new PublishThread(topic,message);
@@ -475,7 +570,7 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
 
     private boolean canbeStopValue(float[] values){
         if(values.length!=3) return false;
-        return values[0] * values[0] + values[1] * values[1] + values[2] * values[2] < stopQuota * stopQuota;
+        return (values[0] * values[0] + values[1] * values[1] + values[2] * values[2]) < stopQuota * stopQuota;
     }
     private void stopValue(float[] values){
         for(int i=0;i<values.length;i++){
@@ -501,14 +596,15 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
                     case ACC_SENSOR_CHANGE: {
                         float[] values = (float[]) msg.obj;
 
-                        if (isStartComputingPoint) {
+                        //if (isStartComputingPoint) {
                             linear_acceleration = values;
+                            //cut-off the velocity and acc if the length of acc is lower than a threshold
                             if(canbeStopValue(linear_acceleration)) stopValue(linear_acceleration);
                             List<Float> vector_local_acceleration = new ArrayList<>();
                             for (float a : linear_acceleration) {
                                 vector_local_acceleration.add(a);
                             }
-                            Mat linear_acceleration_world = new Mat();
+                            Mat linear_acceleration_world = new Mat(3,3,CvType.CV_32FC1);
                             linear_acceleration_world = Camera.matMul(
                                     rotationMatrix_phone2world,
                                     Converters.vector_float_to_Mat(vector_local_acceleration),
@@ -525,12 +621,14 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
                             mSpeed.z+=linear_accleration_array[2]* DELTA_TIME;
 
                             double[] speed={mSpeed.x,mSpeed.y,mSpeed.z};
-                            if(canbeStopValue(speed)){
+                            if(canbeStopValue(speed)||canbeStopValue(linear_accleration_array)){
                                 stopValue(speed);
                                 mSpeed.x=0;
                                 mSpeed.y=0;
                                 mSpeed.z=0;
                             }
+
+                            mTextview4.setText("Speed\n" + "x: " + mSpeed.x + "\ny: " + mSpeed.y + "\nz:"  + mSpeed.z);
 
                             mPosWorld.x+=(mSpeed.x* DELTA_TIME);
                             mPosWorld.y+=(mSpeed.y* DELTA_TIME);
@@ -541,9 +639,32 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
                                     "y: " + mPosWorld.y + "\n" +
                                     "z: " + mPosWorld.z;
                             mTextview3.setText(stringBuilder);
-                        }
-                        else{publish("WindyIce_linearAcc","y_"+values[0]+
-                                "_x_"+values[1]+"_z_"+values[2]);}
+
+                            if(canUpdateR1){
+                            Mat mPosWorldMat=new Mat(3,1,CvType.CV_32FC1);
+                            mPosWorldMat.put(0,0,mPosWorld.x);
+                            mPosWorldMat.put(1,0,mPosWorld.y);
+                            mPosWorldMat.put(2,0,mPosWorld.z);
+                            Mat mPosScreenMat=new Mat(3,1,CvType.CV_32FC1);
+
+                            // 这里的R2一定是拍完所有照片才初始化的！！！
+                            mPosScreenMat=matMul(R2.t(),mPosWorldMat,mPosScreenMat);
+                            mPosScreen.x=mPosScreenMat.get(0,0)[0];
+                            mPosScreen.y=mPosScreenMat.get(1,0)[0];
+                            mPosScreen.z=mPosScreenMat.get(2,0)[0];
+
+                            // 这里和下面的position都一定要乘一个factor
+
+                            publish(MQTT_MESSAGE_TOPIC,"cpos"+(float)mPosScreen.x*factor+" "+(float)mPosScreen.y*factor+" "+(float)mPosScreen.z*factor);
+                            }
+                            else{
+                                publish(MQTT_MESSAGE_TOPIC,"cpos"+(float)mPosWorld.x*factor+" "+(float)mPosWorld.y*factor+" "+(float)mPosWorld.z*factor);
+                            }
+                        //}
+//                        else{
+//                            publish(MQTT_MESSAGE_TOPIC,"cpos"+values[0]+
+//                                " "+values[1]+" "+values[2]);
+//                        }
                         String string = "LINEAR_ACCELERATION:\nx: " + values[0] + "\n" + "y: " + values[1] + "\n" + "z: " + values[2] + "\n";
                         mTextview.setText(string);
                     }
@@ -552,7 +673,7 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
                         if (rotationMatrix_phone2world == null)
                             rotationMatrix_phone2world = new Mat(3, 3, CvType.CV_32FC1);
                         float[] values = (float[]) msg.obj;
-                        if (isStartComputingPoint) {
+                        //if (isStartComputingPoint) {
                             orientation = values;
                             double y = Math.toRadians(values[0]); // y---Yaw的弧度值
                             double x = Math.toRadians(values[1]); // x---Pitch的弧度值
@@ -566,16 +687,21 @@ public class CVCamera extends AppCompatActivity implements CameraBridgeViewBase.
                             // TODO : 转换一波！
                             Mat tempMat = new Mat(3, 3, CvType.CV_32FC1);
                             tempMat.put(0, 0, c1 * c3 + s1 * s2 * s3);
-                            tempMat.put(0, 1, c3 * s1 * s2 - c1 * c3);
+                            tempMat.put(0, 1, c3 * s1 * s2 - c1 * s3);
                             tempMat.put(0, 2, c2 * s1);
                             tempMat.put(1, 0, c2 * s3);
-                            tempMat.put(1, 1, c2 * s3);
+                            tempMat.put(1, 1, c2 * c3);
                             tempMat.put(1, 2, -s2);
                             tempMat.put(2, 0, c1 * s2 * s3 - c3 * s1);
                             tempMat.put(2, 1, c1 * c3 * s2 + s1 * s3);
                             tempMat.put(2, 2, c1 * c2);
                             rotationMatrix_phone2world = tempMat.t(); // 会不会出错？是逆矩阵还是？这里直接优化成transpose(正交矩阵的逆等于转置)
-                        }
+                            R3=tempMat;
+                            if(canUpdateR1){
+                                R1=matMul(R3,R2,R1);
+                            }
+
+                        //}
                         String string = "ORIENTATION:\nYaw: " + values[0] + "\n" + "Pitch: " + values[1] + "\n" + "Roll: " + values[2] + "\n";
                         mTextview1.setText(string);
                     }
